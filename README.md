@@ -1,5 +1,176 @@
 # EPSON 4543SA/SB
 
+This library is a driver for the Epson RTC4543SA/SB.
+
+
+## Functional verification
+For the RTC, I used Akizuki Denshi's [AkizukiRTC_4543][32 kHz Output Serial RTC Board Module (uses RT4543)].
+
+The following three models have been confirmed to work.
+
+| CPU Architecture | Model Used |
+|---|---|
+| AVR | Arduino Mega |
+| SAMD | Arduino MKR WiFi 1010 |
+| SAM | Arduino Due |
+
+### Restrictions
+The function `int checkLowPower(void)`, which reads the flag that detects a power loss, sometimes returns a result indicating that power has not been lost (even though the power was turned off), which is suspicious behavior. This occurred on all models (Mega, Due, etc.).
+
+Since this is the first bit of the data access sequence, it might be a timing issue, but I haven’t been able to resolve it yet.
+
+Since I don’t have a logic analyzer or similar equipment, it is practically impossible to resolve communication-related issues.
+
+# API
+
+For detailed information on how the system works, please refer to the application manual published by Epson in addition to this document.
+
+## Regarding initialization
+### Object creation
+```
+RTC_4543_U(uint8_t _dataPin, uint8_t _clkPin, uint8_t _wrPin, uint8_t _cePin, uint8_t _fsel, int32_t _rtcID=-1)
+```
+
+Provide the pin numbers connected to each terminal used by the 4543 and the  ID of rtc as arguments.
+Since `_fsel` is used for clock signal output, please refer to that section.
+
+### initialization
+```
+bool  begin(bool init, uint32_t addr)
+```
+
+The first argument is a flag indicating whether to configure the time, timer, or alarm.
+
+The second argument is intended for I2C devices and the like, so it is ignored by this RTC driver.
+
+| Return Value | Meaning |
+|---|---|
+|true|Initialization successful|
+|false|Initialization failed|
+
+## Retrieving RTC Information
+A member function that retrieves information about the type and features of the RTC chip.
+```
+void  getRtcInfo(rtc_u_info_t *info)
+```
+
+## Information about time
+### Time Settings
+```
+bool  setTime(rtc_date_t* time)
+```
+Sets the RTC to the time specified in the argument.
+| Return Value | Meaning |
+|---|---|
+|true|Set successfully|
+|false|Set failed|
+
+Note that the data types of the arguments are defined in ``dateUtils.h`` as shown below. Most RTCs, including this one, can not  use time in milliseconds.
+
+```
+typedef struct  {
+  uint16_t  year;
+  uint8_t   month;
+  uint8_t   mday;
+  uint8_t   wday;
+  uint8_t   hour;
+  uint8_t   minute;
+  uint8_t   second;
+  int16_t   millisecond;
+} date_t;
+```
+
+### Get the time
+```
+bool  getTime(rtc_date_t* time)
+```
+Store the time information obtained from the RTC in a structure passed as an argument.
+| Return Value | Meaning |
+|---|---|
+|true|Retrieval successful|
+|false|Retrieval failed|
+
+
+## Frequency signal output
+### Clock Output Settings
+```
+int   setClockOut(uint8_t num, uint8_t freq, int8_t pin=-1)
+```
+
+In this RTC (4543SA/SB), there is only one type of clock signal output. The output frequency is determined by the voltage setting on an external pin, and the output status (on or off) is determined by the voltage on a different pin. 
+Therefore, the first argument must be 0. Specify the Arduino pin number connected to the RTC's FOE terminal in `pin`.
+
+| freq value | Output frequency |
+|---|---|
+| 0 | 32.768 kHz |
+| Others | 1 Hz |
+
+In practice, the output frequency of the RTC clock signal is controlled by setting the voltage on the ``_fsel`` pin—specified when creating an object of this class—to either ``HIGH`` or ``LOW`` according to the value of ``freq``. Therefore, please note that if `_fsel` or the `pin` of this function is not properly connected to the RTC, the signal will not be output correctly.
+
+| Return Value | Meaning |
+|---|---|
+|RTC_U_SUCCESS | Configuration successful |
+|RTC_U_ILLEGAL_PARAM | Invalid value for `num` |
+
+### Clock Frequency Settings
+```
+int   setClockOutMode(uint8_t num, uint8_t freq)
+```
+The meaning of each argument and the details of its operation are the same as those of ``setClockOut()``.
+
+| freq value | Output frequency |
+|---|---|
+| 0 | 32.768 kHz |
+| Other | 1 Hz |
+
+| Return Value | Meaning |
+|---|---|
+|RTC_U_SUCCESS | Configuration successful |
+|RTC_U_ILLEGAL_PARAM | Invalid value for `num` |
+
+### Controlling the Clock Output
+```
+int   controlClockOut(uint8_t num, uint8_t mode)
+```
+Since there is only one terminal that outputs frequency signals, `num` must be 0. Additionally, the second argument has the meanings shown in the table below.
+
+|``mode`` value|Meaning|
+|---|---|
+|0|Clock output stopped|
+|1|Clock output started|
+
+
+In practice, the signal output from the RTC is turned on or off by setting the voltage of the `pin` (foe pin) specified in `setClockOut()` to `HIGH` or `LOW`.
+
+| Return Value | Meaning |
+|---|---|
+|RTC_U_SUCCESS | Configuration successful |
+|RTC_U_FAILURE | Configuration failed |
+|RTC_U_ILLEGAL_PARAM | Setting of unsupported parameters, etc. |
+
+
+## Power Supply Voltage
+### Retrieving the power flag
+```
+int checkLowPower(void)
+```
+Retrieves and returns the ``FDT``value from the RTC data, which indicates a drop in the power supply voltage.
+
+| Return Value | Meaning |
+|---|---|
+|0 | No voltage drop |
+|1 | Voltage drop detected |
+
+In this RTC, the ``FDT`` is cleared when all RTC data is read, so it cannot be read multiple times.
+
+### Clearing the power flag
+```
+int clearPowerFlag(void)
+```
+A function that clears the flag indicating a power loss (``FDT``). It always returns ``RTC_U_SUCCESS``.
+
+In this RTC, since the ``FDT`` is cleared when all RTC data is read, there is no need to call this function if ``checkLowPower()`` has been executed.
+
 
 [AkizukiRTC_4543]:https://akizukidenshi.com/catalog/g/gK-10722/
 [Grove]:https://www.seeedstudio.io/category/Grove-c-1003.html
